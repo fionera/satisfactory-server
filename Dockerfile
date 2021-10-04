@@ -1,3 +1,10 @@
+FROM golang:1.17-alpine3.13 as build_go
+WORKDIR /go/src/app
+COPY mod_helper .
+
+RUN go get -d -v ./...
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -v -o mod_helper .
+
 FROM steamcmd/steamcmd:ubuntu-18
 
 RUN set -x \
@@ -11,6 +18,7 @@ RUN useradd -ms /bin/bash satisfactory
 
 COPY Game.ini Engine.ini Scalability.ini /home/satisfactory/
 COPY backup.sh init.sh steamscript.txt /
+COPY --from=build_go /go/src/app/mod_helper /
 
 RUN chmod +x "/backup.sh" "/init.sh"
 

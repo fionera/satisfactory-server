@@ -5,60 +5,65 @@ set -e
 mkdir -p /config/gamefiles /config/savefiles /config/savefilebackups /config/steam /root/.steam/config "${GAMECONFIGDIR}/Config/WindowsNoEditor" "${GAMECONFIGDIR}/Logs" "${GAMECONFIGDIR}/SaveGames/common" || exit 1
 touch "${GAMECONFIGDIR}/Logs/FactoryGame.log"
 
-if [[ -z "$STEAMUSER" || -z "$STEAMPWD" ]]; then
-    printf "Missing Steam credentials environment variables (STEAMUSER, STEAMPWD).\\n"
-    exit 1
-fi
+if [[ -z "$SKIP_UPDATE" ]]; then
+  if [[ -z "$STEAMUSER" || -z "$STEAMPWD" ]]; then
+      printf "Missing Steam credentials environment variables (STEAMUSER, STEAMPWD).\\n"
+      exit 1
+  fi
 
-sentry=$(find /config/steam/ -type f -name "ssfn*")
+  sentry=$(find /config/steam/ -type f -name "ssfn*")
 
-if [[ ! -f "/config/steam/config.vdf" || ! -f "$sentry" ]]; then
-    if [[ -z "$STEAMCODE" ]]; then
-        printf "Missing Steam credentials environment variables (STEAMCODE), this code is needed for the intial build.\\n"
-        exit 1
-    fi
+  if [[ ! -f "/config/steam/config.vdf" || ! -f "$sentry" ]]; then
+      if [[ -z "$STEAMCODE" ]]; then
+          printf "Missing Steam credentials environment variables (STEAMCODE), this code is needed for the intial build.\\n"
+          exit 1
+      fi
+  else
+      sentry_file=$(basename "$sentry")
+
+      cp "/config/steam/config.vdf" "/root/.steam/config/config.vdf"
+      cp "$sentry" "/root/.steam/${sentry_file}"
+  fi
+
+  if [[ "$STEAMBETA" == "true" ]]; then
+      printf "Experimental flag is set. Experimental will be downloaded instead of Early Access.\\n"
+      STEAMBETAFLAG=" -beta experimental"
+  fi
+
+  printf "Checking available space...\\n"
+  space=$(stat -f --format="%a*%S" .)
+  space=$((space/1024/1024/1024))
+
+  if [[ "$space" -lt 20 ]]; then
+    printf "You have less than 20GB (${space}GB detected) of available space to download the game.\\nIf this is a fresh install, it will probably fail.\\n"
+  fi
+
+  printf "Downloading the latest version of the game...\\n"
+
+  export STEAMBETAFLAG
+
+  envsubst < "/steamscript.txt" > "/root/steamscript.txt"
+
+  steamcmd +runscript /root/steamscript.txt
+  errors=$(< /root/.steam/logs/connection_log.txt grep "Invalid" || true)
+  if [[ -n "$errors" ]]; then
+      printf "Failed to login to Steam. Please check your Steam credentials.\\nSleeping for 60 seconds..."
+      sleep 60
+      exit 1
+  fi
+
+  rm /root/steamscript.txt
+
+  sentry=$(find /root/.steam/ -type f -name "ssfn*")
+  if [[ -n "$sentry" ]]; then
+      cp "$sentry" /config/steam/
+  fi
+
+  if [[ -f "/root/.steam/config/config.vdf" ]]; then
+      cp /root/.steam/config/config.vdf /config/steam/
+  fi
 else
-    sentry_file=$(basename "$sentry")
-
-    cp "/config/steam/config.vdf" "/root/.steam/config/config.vdf"
-    cp "$sentry" "/root/.steam/${sentry_file}"
-fi
-
-if [[ "$STEAMBETA" == "true" ]]; then
-    printf "Experimental flag is set. Experimental will be downloaded instead of Early Access.\\n"
-    STEAMBETAFLAG=" -beta experimental"
-fi
-
-printf "Checking available space...\\n"
-space=$(stat -f --format="%a*%S" .)
-space=$((space/1024/1024/1024))
-
-if [[ "$space" -lt 20 ]]; then
-  printf "You have less than 20GB (${space}GB detected) of available space to download the game.\\nIf this is a fresh install, it will probably fail.\\n"
-fi
-
-printf "Downloading the latest version of the game...\\n"
-
-export STEAMBETAFLAG
-envsubst < "/steamscript.txt" > "/root/steamscript.txt"
-
-steamcmd +runscript /root/steamscript.txt
-errors=$(< /root/.steam/logs/connection_log.txt grep "Invalid" || true)
-if [[ -n "$errors" ]]; then
-    printf "Failed to login to Steam. Please check your Steam credentials.\\nSleeping for 60 seconds..."
-    sleep 60
-    exit 1
-fi
-
-rm /root/steamscript.txt
-
-sentry=$(find /root/.steam/ -type f -name "ssfn*")
-if [[ -n "$sentry" ]]; then
-    cp "$sentry" /config/steam/
-fi
-
-if [[ -f "/root/.steam/config/config.vdf" ]]; then
-    cp /root/.steam/config/config.vdf /config/steam/
+  printf "Skipping update check..."
 fi
 
 echo "*/5 * * * * cp -rp \"${GAMECONFIGDIR}/SaveGames/common/\"*.sav /config/savefiles/ 2>&1
@@ -106,6 +111,12 @@ fi
 
 chown -R satisfactory:satisfactory /config/gamefiles /home/satisfactory
 chown root:root "$GAMECONFIGDIR/Config/WindowsNoEditor/Engine.ini" "$GAMECONFIGDIR/Config/WindowsNoEditor/Game.ini"
+
+/mod_helper
+
+if [[ ! -z "$USEMODS" ]]; then
+  export WINEDLLOVERRIDES="msdia140.dll,xinput1_3.dll=n,b"
+fi
 
 sudo -u satisfactory -H sh -c "wine start FactoryGame.exe -listen -nosteamclient -nosplash -nosound -nullrhi -server -spectatoronly -unattended"
 

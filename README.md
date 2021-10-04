@@ -42,6 +42,8 @@ services:
             - STEAMPWD=Your-Steam-Password
             - STEAMCODE=Your-Steam-Code
             - MAXBACKUPS=10
+            - SKIP_UPDATE=true # Only possible when downloaded already. 
+            - MOD_IDS=5yGWmmB8KL2Zq8:93bH5XDMFXs5fe #Smart! at latest version
         ports:
             - '7777:7777/udp'
         volumes:
